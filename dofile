@@ -1,0 +1,342 @@
+capture log close
+log using "${log}LOG", text replace
+
+version 19.5
+set more off
+clear all
+
+
+
+*****************************
+*Definition von Globals
+global holdendata "C:\Users\tobia\Documents\Studium\4. Semester\angewandte empirische Wifo\Holden2016\Holden2016\"
+global tempdata "C:\Users\tobia\Documents\Studium\4. Semester\angewandte empirische Wifo\Holden2016\Holden2016\02_TempData\"
+global do "C:\Users\tobia\Documents\Studium\4. Semester\angewandte empirische Wifo\Holden2016\Holden2016\03_DoFiles\"
+global log "C:\Users\tobia\Documents\Studium\4. Semester\angewandte empirische Wifo/Holden2016\Holden2016\04_LogFiles\"
+global tables "C:\Users\tobia\Documents\Studium\4. Semester\angewandte empirische Wifo/Holden2016\Holden2016\05_Tables\"
+global graphs "C:\Users\tobia\Documents\Studium\4. Semester\angewandte empirische Wifo\Holden2016\Holden2016\06_Graphs\"
+*************************************
+* Tobias Morgenstern
+* Replikation der Arbeit
+* Buy the Book? Evidence on the Effect of Textbook Funding on School-Level Achievement von Holden
+* Seminar zur angewandten empirischen Wirtschaftsforschung
+*************************************
+
+use "${holdendata}holden2016.dta",clear
+drop if stype == ""
+
+*Labels 
+label variable mathscore "Math score"
+label variable readingscore "Reading score"
+label variable api "API score 2003"
+label variable total "Anzahl Schüler"
+label variable pct_hi "Anteil hispanisch"
+label variable pct_wh "Anteil weiß"
+label variable pct_other "Anteil andere"
+label variable pct_frl "Anteil mit Anspruch auf kostenloses/vergünstigtes Mittagessen"
+label variable fte_t "Vollzeitäquivalent Lehrer"
+label variable fte_a "Vollzeitäquivalent Verwaltung"
+label variable fte_p "Vollzeitäquivalent Schülerbetreuung "
+label variable classsize "Schüler/Lehrer"
+
+*summary statistics
+count
+eststo clear
+estpost summarize mathscore readingscore api total pct_hi pct_wh pct_other pct_frl fte_t fte_a fte_p classsize
+eststo full_sample
+
+
+*Lösche alle Beobachtungen die außerhalb der Bandbreite liegen
+drop if stype == "E" & !inrange(api_rel, -19.099, 19.099)
+drop if stype == "M" & !inrange(api_rel, -19.099, 19.099)
+drop if stype == "H" & !inrange(api_rel, -19.099, 19.099)
+
+*Überprüfung der Daten anhand von Tabelle 1 Spalte 2
+count
+estpost summarize mathscore readingscore api total pct_hi pct_wh pct_other pct_frl fte_t fte_a fte_p classsize 
+eststo restricted_sample
+
+*Export für LaTeX
+esttab full_sample restricted_sample using "${tables}/table1.tex", replace ///
+    main(mean) aux(N) nostar unstack cells("mean(fmt(2))") ///
+    label booktabs nonumbers collabels(none) ///
+    mtitles("Gesamtstichprobe" "19.099 API Bandbreite um den Cutoff")
+
+********************************************************************************
+* Tabelle 2
+use "${holdendata}holden2016.dta",clear
+
+*Datenretsriktionen nach Tablenotes
+drop if stype != "E"
+
+*Generierung einer Variable die score aus vorjahr abbildet
+bysort cds (year): gen preaveragescore_std = averagescore_std[_n-1]
+
+*Datenretsriktionen
+keep if inlist(year, 2002, 2003, 2004)
+keep if inrange(api_rel, -19.099, 19.099)
+
+*Generierung Bonus für Schulen unter Treshhold
+gen bonus = 0
+replace bonus = 1 if api_rel <= 0
+
+*Generierung des Interaktionsterms
+gen api_rel_treat = bonus * api_rel
+
+*Predicted Values für average score
+reg averagescore_std total pct_wh pct_hi pct_frl
+predict a_h1
+
+reg averagescore_std total pct_wh pct_hi pct_frl fte_a fte_p fte_t yrs_dist yrs_teach
+predict a_h2
+
+reg averagescore_std total pct_wh pct_hi pct_frl fte_a fte_p fte_t yrs_dist yrs_teach preaveragescore_std
+predict a_h3
+
+*Predicted Values für math score
+reg mathscore_std total pct_wh pct_hi pct_frl
+predict m_h1
+
+reg mathscore_std total pct_wh pct_hi pct_frl fte_a fte_p fte_t yrs_dist yrs_teach
+predict m_h2
+
+reg mathscore_std total pct_wh pct_hi pct_frl fte_a fte_p fte_t yrs_dist yrs_teach preaveragescore_std
+predict m_h3
+
+*Predicted Values für reading score
+reg readingscore_std total pct_wh pct_hi pct_frl
+predict r_h1
+
+reg readingscore_std total pct_wh pct_hi pct_frl fte_a fte_p fte_t yrs_dist yrs_teach
+predict r_h2
+
+reg readingscore_std total pct_wh pct_hi pct_frl fte_a fte_p fte_t yrs_dist yrs_teach preaveragescore_std
+predict r_h3
+
+*Regressionen & Latex Export
+eststo clear
+
+* für Average
+eststo a1: reg a_h1 bonus api_rel api_rel_treat , robust
+eststo a2: reg a_h2 bonus api_rel api_rel_treat , robust
+eststo a3: reg a_h3 bonus api_rel api_rel_treat , robust
+
+* für Math
+eststo m1: reg m_h1 bonus api_rel api_rel_treat , robust
+eststo m2: reg m_h2 bonus api_rel api_rel_treat , robust
+eststo m3: reg m_h3 bonus api_rel api_rel_treat , robust
+
+*für Reading
+eststo r1: reg r_h1 bonus api_rel api_rel_treat , robust
+eststo r2: reg r_h2 bonus api_rel api_rel_treat , robust
+eststo r3: reg r_h3 bonus api_rel api_rel_treat , robust
+
+
+
+esttab a1 a2 a3 using "${tables}table2_fragment.tex", replace ///
+    keep(bonus) coeflabels(bonus "Average score") ///
+    b(3) se(3) nostar nomtitles nonumbers noobs ///
+    fragment
+
+esttab m1 m2 m3 using "${tables}table2_fragment.tex", append ///
+    keep(bonus) coeflabels(bonus "Math") ///
+    b(3) se(3) nostar nomtitles nonumbers noobs ///
+    fragment
+
+esttab r1 r2 r3 using "${tables}table2_fragment.tex", append ///
+    keep(bonus) coeflabels(bonus "Reading") ///
+    b(3) se(3) nostar nomtitles nonumbers noobs ///
+    fragment
+
+
+
+
+********************************************************************************
+*Figure 5 Panel B
+use "${holdendata}holden2016.dta", clear
+
+*Datenretsriktionen
+keep if year == 2005 & stype == "E" 
+
+*Generierung einer Binvariable
+gen binvar = 3 * floor(api_rel / 3) + 1.5
+replace binvar = . if api_rel == 0
+
+egen averagescore_std_binned = mean(averagescore_std), by(binvar year)
+
+twoway (scatter  averagescore_std_binned binvar if inrange(binvar, -50, 50) & year == 2005, xline(0, lpattern(solid)) xtitle("API Wert in 2003 zentriert um den Schwellenwert") ytitle("Mittleres standardisiertes Testergebnis") mcolor(black))
+
+graph export "${graphs}fig5_panelB.pdf", replace
+
+
+
+********************************************************************************
+
+*Regression Table 5
+use "${holdendata}holden2016.dta", clear
+
+
+keep if stype == "E" & inrange(api_rel, -19.099, 19.099)
+
+
+gen bonus = 0
+replace bonus = 1 if api_rel <= 0
+
+gen api_rel_treat = bonus * api_rel
+
+eststo clear
+
+* für average score
+eststo a1: reg averagescore_std bonus api_rel api_rel_treat if year >= 2005 , robust
+eststo a2: reg averagescore_std bonus api_rel api_rel_treat if year == 2002, robust
+eststo a3: reg averagescore_std bonus api_rel api_rel_treat if year == 2003, robust
+eststo a4: reg averagescore_std bonus api_rel api_rel_treat if year == 2004, robust
+eststo a5: reg averagescore_std bonus api_rel api_rel_treat if year == 2005, robust
+eststo a6: reg averagescore_std bonus api_rel api_rel_treat if year == 2006, robust
+eststo a7: reg averagescore_std bonus api_rel api_rel_treat if year == 2007, robust
+eststo a8: reg averagescore_std bonus api_rel api_rel_treat if year == 2008, robust
+eststo a9: reg averagescore_std bonus api_rel api_rel_treat if year == 2009, robust
+
+* für math score
+eststo m1: reg mathscore_std bonus api_rel api_rel_treat if year >= 2005, robust
+eststo m2: reg mathscore_std  bonus api_rel api_rel_treat if year == 2002, robust
+eststo m3: reg mathscore_std bonus api_rel api_rel_treat if year == 2003, robust
+eststo m4: reg mathscore_std bonus api_rel api_rel_treat if year == 2004, robust
+eststo m5: reg mathscore_std bonus api_rel api_rel_treat if year == 2005, robust
+eststo m6: reg mathscore_std bonus api_rel api_rel_treat if year == 2006, robust
+eststo m7: reg mathscore_std bonus api_rel api_rel_treat if year == 2007, robust
+eststo m8: reg mathscore_std bonus api_rel api_rel_treat if year == 2008, robust
+eststo m9: reg mathscore_std bonus api_rel api_rel_treat if year == 2009, robust
+
+* für reading score
+eststo r1: reg readingscore_std bonus api_rel api_rel_treat if year >= 2005, robust
+eststo r2: reg readingscore_std bonus api_rel api_rel_treat if year == 2002, robust
+eststo r3: reg readingscore_std bonus api_rel api_rel_treat if year == 2003, robust
+eststo r4: reg readingscore_std bonus api_rel api_rel_treat if year == 2004, robust
+eststo r5: reg readingscore_std bonus api_rel api_rel_treat if year == 2005, robust
+eststo r6: reg readingscore_std bonus api_rel api_rel_treat if year == 2006, robust
+eststo r7: reg readingscore_std bonus api_rel api_rel_treat if year == 2007, robust
+eststo r8: reg readingscore_std bonus api_rel api_rel_treat if year == 2008, robust
+eststo r9: reg readingscore_std bonus api_rel api_rel_treat if year == 2009, robust
+
+*Latex export
+*Average
+esttab a1 a2 a3 a4 a5 a6 a7 a8 a9 using "${tables}table5_fragment.tex", replace ///
+    keep(bonus) coeflabels(bonus "Average score") ///
+    b(2) se(2) nomtitles nonumbers noobs nostar ///
+    fragment
+
+* Math
+esttab m1 m2 m3 m4 m5 m6 m7 m8 m9 using "${tables}table5_fragment.tex", append ///
+    keep(bonus) coeflabels(bonus "Math") ///
+    b(2) se(2) nomtitles nonumbers noobs nostar ///
+    fragment
+
+* Reading
+esttab r1 r2 r3 r4 r5 r6 r7 r8 r9 using "${tables}table5_fragment.tex", append ///
+    keep(bonus) coeflabels(bonus "Reading") ///
+    b(2) se(2) nomtitles nonumbers noobs nostar ///
+    fragment
+
+******************************************************************************
+** Tabelle 6
+use "${holdendata}holden2016.dta", clear
+drop if stype != "E"
+drop if !inrange(api_rel, -19.099, 19.099)
+
+*Generierung der Bonus Variable 
+gen bonus = 0
+replace bonus = 1 if api_rel <= 0
+
+*Generierung des Interaktionsterms
+gen api_rel_treat = bonus * api_rel
+
+
+eststo clear
+
+* für far below
+eststo e1_1: reg pct_far_below_average bonus api_rel api_rel_treat if inrange(year, 2005, 2009), robust
+eststo e1_2: reg pct_far_below_average bonus api_rel api_rel_treat if year == 2002, robust
+eststo e1_3: reg pct_far_below_average bonus api_rel api_rel_treat if year == 2003, robust
+eststo e1_4: reg pct_far_below_average bonus api_rel api_rel_treat if year == 2004, robust
+eststo e1_5: reg pct_far_below_average bonus api_rel api_rel_treat if year == 2005, robust
+eststo e1_6: reg pct_far_below_average bonus api_rel api_rel_treat if year == 2006, robust
+eststo e1_7: reg pct_far_below_average bonus api_rel api_rel_treat if year == 2007, robust
+eststo e1_8: reg pct_far_below_average bonus api_rel api_rel_treat if year == 2008, robust
+eststo e1_9: reg pct_far_below_average bonus api_rel api_rel_treat if year == 2009, robust
+
+* für below
+eststo e2_1: reg pct_below_average bonus api_rel api_rel_treat if inrange(year, 2005, 2009), robust
+eststo e2_2: reg pct_below_average bonus api_rel api_rel_treat if year == 2002, robust
+eststo e2_3: reg pct_below_average bonus api_rel api_rel_treat if year == 2003, robust
+eststo e2_4: reg pct_below_average bonus api_rel api_rel_treat if year == 2004, robust
+eststo e2_5: reg pct_below_average bonus api_rel api_rel_treat if year == 2005, robust
+eststo e2_6: reg pct_below_average bonus api_rel api_rel_treat if year == 2006, robust
+eststo e2_7: reg pct_below_average bonus api_rel api_rel_treat if year == 2007, robust
+eststo e2_8: reg pct_below_average bonus api_rel api_rel_treat if year == 2008, robust
+eststo e2_9: reg pct_below_average bonus api_rel api_rel_treat if year == 2009, robust
+
+* für standard
+eststo e3_1: reg pct_standard_average bonus api_rel api_rel_treat if inrange(year, 2005, 2009), robust
+eststo e3_2: reg pct_standard_average bonus api_rel api_rel_treat if year == 2002, robust
+eststo e3_3: reg pct_standard_average bonus api_rel api_rel_treat if year == 2003, robust
+eststo e3_4: reg pct_standard_average bonus api_rel api_rel_treat if year == 2004, robust
+eststo e3_5: reg pct_standard_average bonus api_rel api_rel_treat if year == 2005, robust
+eststo e3_6: reg pct_standard_average bonus api_rel api_rel_treat if year == 2006, robust
+eststo e3_7: reg pct_standard_average bonus api_rel api_rel_treat if year == 2007, robust
+eststo e3_8: reg pct_standard_average bonus api_rel api_rel_treat if year == 2008, robust
+eststo e3_9: reg pct_standard_average bonus api_rel api_rel_treat if year == 2009, robust
+
+* für proficient
+eststo e4_1: reg pct_proficient_average bonus api_rel api_rel_treat if inrange(year, 2005, 2009), robust
+eststo e4_2: reg pct_proficient_average bonus api_rel api_rel_treat if year == 2002, robust
+eststo e4_3: reg pct_proficient_average bonus api_rel api_rel_treat if year == 2003, robust
+eststo e4_4: reg pct_proficient_average bonus api_rel api_rel_treat if year == 2004, robust
+eststo e4_5: reg pct_proficient_average bonus api_rel api_rel_treat if year == 2005, robust
+eststo e4_6: reg pct_proficient_average bonus api_rel api_rel_treat if year == 2006, robust
+eststo e4_7: reg pct_proficient_average bonus api_rel api_rel_treat if year == 2007, robust
+eststo e4_8: reg pct_proficient_average bonus api_rel api_rel_treat if year == 2008, robust
+eststo e4_9: reg pct_proficient_average bonus api_rel api_rel_treat if year == 2009, robust
+
+*für advanced
+eststo e5_1: reg pct_advanced_average bonus api_rel api_rel_treat if inrange(year, 2005, 2009), robust
+eststo e5_2: reg pct_advanced_average bonus api_rel api_rel_treat if year == 2002, robust
+eststo e5_3: reg pct_advanced_average bonus api_rel api_rel_treat if year == 2003, robust
+eststo e5_4: reg pct_advanced_average bonus api_rel api_rel_treat if year == 2004, robust
+eststo e5_5: reg pct_advanced_average bonus api_rel api_rel_treat if year == 2005, robust
+eststo e5_6: reg pct_advanced_average bonus api_rel api_rel_treat if year == 2006, robust
+eststo e5_7: reg pct_advanced_average bonus api_rel api_rel_treat if year == 2007, robust
+eststo e5_8: reg pct_advanced_average bonus api_rel api_rel_treat if year == 2008, robust
+eststo e5_9: reg pct_advanced_average bonus api_rel api_rel_treat if year == 2009, robust
+
+
+* Latex export
+
+esttab e1_1 e1_2 e1_3 e1_4 e1_5 e1_6 e1_7 e1_8 e1_9 using "${tables}table6_fragment.tex", replace ///
+    keep(bonus) coeflabels(bonus "Far below standard") ///
+    b(2) se(2) nomtitles nonumbers noobs nostar ///
+    fragment
+
+esttab e2_1 e2_2 e2_3 e2_4 e2_5 e2_6 e2_7 e2_8 e2_9 using "${tables}table6_fragment.tex", append ///
+    keep(bonus) coeflabels(bonus "Below standard") ///
+    b(2) se(2) nomtitles nonumbers noobs nostar ///
+    fragment
+
+esttab e3_1 e3_2 e3_3 e3_4 e3_5 e3_6 e3_7 e3_8 e3_9 using "${tables}table6_fragment.tex", append ///
+    keep(bonus) coeflabels(bonus "Meets standard") ///
+    b(2) se(2) nomtitles nonumbers noobs nostar ///
+    fragment
+
+esttab e4_1 e4_2 e4_3 e4_4 e4_5 e4_6 e4_7 e4_8 e4_9 using "${tables}table6_fragment.tex", append ///
+    keep(bonus) coeflabels(bonus "Proficient") ///
+    b(2) se(2) nomtitles nonumbers noobs nostar ///
+    fragment
+
+esttab e5_1 e5_2 e5_3 e5_4 e5_5 e5_6 e5_7 e5_8 e5_9 using "${tables}table6_fragment.tex", append ///
+    keep(bonus) coeflabels(bonus "Advanced") ///
+    b(2) se(2) nomtitles nonumbers noobs nostar ///
+    fragment
+
+
+log close
+exit
